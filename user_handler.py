@@ -1,43 +1,68 @@
 #!/usr/bin/python
 
 from socket import *
-
-users = dict()
+from signal import *
+from multiprocessing.reduction import reduce_handle, rebuild_handle
 
 host = ''
 port = 19940
+users = {}
 
-sock = socket(AF_INET, SOCK_STREAM)
+def quit(signum, frame):
+    for each in users:
+        fd = rebuild_handle(users[each])
+        quitSock = fromfd(fd, AF_INET, SOCK_STREAM)
+        quitSock.send("Server terminated.")
+        quitSock.close()
+        del users[each]
+    exit(0)
 
-sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+def dict_is_empty(d):
+    try:
+        for k in d:
+            return False
+    except KeyError:
+        return True
 
-sock.bind((host, port))
+def handle_users(u):
+    users = u
+    signal(SIGTERM, quit)
+    signal(SIGINT, quit)
 
-sock.listen(1)
+    sock = socket(AF_INET, SOCK_STREAM)
 
-while True:
-    clntSock, clntAddr = sock.accept()
-    clntFile = clntSock.makefile("r", 0)
+    sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 
-    message = clntFile.readline().strip()
+    sock.bind((host, port))
 
-    action, username = message.split()
+    sock.listen(1)
 
-    if (action == "ENTER"):
-        users[username] = clntSock
+    while True:
+        clntSock, clntAddr = sock.accept()
+        clntFile = clntSock.makefile("r", 0)
 
-        print "{"
-        for keys, values in users.items():
-            print keys + ":", values
-        print "}"
-    elif (action == "EXIT"):
-        users[username].close()
-        del users[username]
-        clntSock.close()
+        message = clntFile.readline().strip()
 
-        print "{"
-        for keys, values in users.items():
-            print keys + ": ", values
-        print "}"
+        action, username = message.split()
 
-    clntFile.close()
+        if (action == "ENTER"):
+            pickled_socket = reduce_handle(clntSock.fileno())
+            users[username] = pickled_socket
+
+            print "{"
+            for keys, values in users.items():
+                print keys + ":", values
+            print "}"
+        elif (action == "EXIT"):
+            fd = rebuild_handle(users[username])
+            quitSock = fromfd(fd, AF_INET, SOCK_STREAM)
+            quitSock.close()
+            del users[username]
+            clntSock.close()
+
+            print "{"
+            for keys, values in users.items():
+                print keys + ": ", values
+            print "}"
+
+        clntFile.close()

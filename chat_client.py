@@ -1,10 +1,11 @@
 #!/usr/bin/python
 from sys import argv, stdin
-from socket import *
 from signal import *
+from select import *
+from socket import *
 
 if len(argv) != 2:
-    print "Usage: ./server.py [host]"
+    print "Usage: %s [host]" % argv[0]
     exit(1)
 
 host = gethostbyname(argv[1])
@@ -34,12 +35,16 @@ except error:
 
 sock.send("ENTER " + username + "\n")
 
-sockFile = sock.makefile("rw", 0)
-
+sock.setblocking(0)
 
 while True:
-    for line in sockFile:
-        print line
-
-    for line in stdin:
-        sock.send(line)
+    while stdin in select([stdin], [], [], 0)[0]:
+        line = stdin.readline()
+        if line:
+            sock.send(username + ": " + line)
+    else:
+        try:
+            messages = sock.recv(4096)
+            print messages
+        except error:
+            pass
